@@ -1,0 +1,12 @@
+{
+  "name": "cc-voice-channel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "channel": "node channel.ts",
+    "test": "node --test auth.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1"
+  }
+}
