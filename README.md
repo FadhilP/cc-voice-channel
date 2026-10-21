@@ -87,9 +87,10 @@ Tested with Python 3.10, Node 24, Claude Code 2.1.306, and an RTX 5070.
 
    On the first start, approve the `voice` MCP server, then confirm the development channel warning.
 
-3. Press `Ctrl+F12`, speak, and press it again.
+3. Press `F13`, speak, and press it again. To drop the recording instead of sending it, press `F14`.
    - A high beep means recording started.
    - A low beep means recording stopped.
+   - Two short low beeps mean the recording was cancelled.
    - A long low beep means Claude Code was not reachable.
 
 Claude speaks when it finishes a task, when a subagent reports back, or when it needs a decision. Short replies to small talk stay in the terminal as text.
@@ -100,7 +101,8 @@ Edit the constants at the top of `daemon.py`, then restart the daemon.
 
 | Constant | Default | Meaning |
 | - | - | - |
-| `HOTKEY` | `ctrl+f12` | Starts and stops recording. Uses the [`keyboard`](https://github.com/boppreh/keyboard) hotkey format. |
+| `HOTKEY` | `f13` | Starts and stops recording. Uses the [`keyboard`](https://github.com/boppreh/keyboard) hotkey format. Most keyboards have no F13–F24 keys, so send them with a macro tool. |
+| `CANCEL_HOTKEY` | `f14` | Stops recording and drops the audio. |
 | `TTS_VOICE` | `af_heart` | Kokoro voice. See below. |
 | `SPEECH_RMS` | `0.01` | Loudness level that counts as speech. Depends on your mic. |
 | `MIN_SPEECH_SECONDS` | `0.3` | Recordings with less speech than this are skipped. This stops the model from inventing words from silence. |

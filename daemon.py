@@ -12,6 +12,7 @@ import sounddevice as sd
 import torch
 
 HOTKEY = "f13"
+CANCEL_HOTKEY = "f14"
 STT_REPO = "Qwen/Qwen3-ASR-1.7B-hf"
 STT_DEVICE = "cuda"
 TTS_REPO = "hexgrad/Kokoro-82M"
@@ -74,15 +75,27 @@ class Recorder:
     def on_audio(self, data, frames, time, status):
         self.chunks.append(data.copy())
 
-    def stop(self):
+    def close_stream(self):
         self.stream.stop()
         self.stream.close()
         self.stream = None
+
+    def stop(self):
+        self.close_stream()
         winsound.Beep(440, 120)
         if not self.chunks:
             return
         audio = np.concatenate(self.chunks)[:, 0]
         threading.Thread(target=send_transcript, args=(audio,), daemon=True).start()
+
+    def cancel(self):
+        if self.stream is None:
+            return
+        self.close_stream()
+        self.chunks = []
+        winsound.Beep(330, 80)
+        winsound.Beep(330, 80)
+        print("Dictation cancelled.")
 
 
 @torch.no_grad()
@@ -175,5 +188,6 @@ if __name__ == "__main__":
 
     recorder = Recorder()
     keyboard.add_hotkey(HOTKEY, recorder.toggle)
-    print(f"Ready. Press {HOTKEY} to start and stop dictation.")
+    keyboard.add_hotkey(CANCEL_HOTKEY, recorder.cancel)
+    print(f"Ready. Press {HOTKEY} to start and stop dictation, {CANCEL_HOTKEY} to cancel it.")
     ThreadingHTTPServer(("127.0.0.1", SPEAK_PORT), SpeakHandler).serve_forever()
