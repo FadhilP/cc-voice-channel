@@ -4,8 +4,8 @@ Talk to a running Claude Code session from anywhere in Windows. Press a global h
 
 Speech-to-text and text-to-speech run locally:
 
-- STT: [Kyutai STT 2.6B](https://huggingface.co/kyutai/stt-2.6b-en) (English) on an NVIDIA GPU.
-- TTS: [Kyutai Pocket TTS](https://github.com/kyutai-labs/pocket-tts) on the CPU.
+- STT: [Qwen3-ASR 1.7B](https://huggingface.co/Qwen/Qwen3-ASR-1.7B-hf) on an NVIDIA GPU.
+- TTS: [Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M).
 
 It is built as a [Claude Code channel](https://code.claude.com/docs/en/channels-reference), so it runs inside the normal Claude Code CLI with your usual login.
 
@@ -19,7 +19,7 @@ The two processes talk over `127.0.0.1` on ports 8788 (daemon to channel) and 87
 ## Requirements
 
 - Windows. The daemon uses `winsound` and the `keyboard` package.
-- An NVIDIA GPU with about 6 GB of free VRAM. `requirements.txt` installs PyTorch for CUDA 12.8.
+- An NVIDIA GPU with about 5 GB of free VRAM. `requirements.txt` installs PyTorch for CUDA 12.8.
 - Python 3.10 or later.
 - Node.js 22.18 or later. It runs `channel.ts` directly with Node's TypeScript support.
 - Claude Code with channels support. Channels are in research preview. On Team and Enterprise plans, an admin must [enable them](https://code.claude.com/docs/en/channels#enterprise-controls).
@@ -70,7 +70,7 @@ Tested with Python 3.10, Node 24, Claude Code 2.1.306, and an RTX 5070.
 
 ## Run
 
-1. Start the daemon from the repo folder. The first run downloads the models (about 6 GB). Loading takes about 30 seconds.
+1. Start the daemon from the repo folder. The first run downloads the models (about 5 GB).
 
    ```powershell
    .venv\Scripts\python daemon.py
@@ -87,7 +87,7 @@ Tested with Python 3.10, Node 24, Claude Code 2.1.306, and an RTX 5070.
 
    On the first start, approve the `voice` MCP server, then confirm the development channel warning.
 
-3. Press `Ctrl+Alt+Space`, speak, and press it again.
+3. Press `Ctrl+F12`, speak, and press it again.
    - A high beep means recording started.
    - A low beep means recording stopped.
    - A long low beep means Claude Code was not reachable.
@@ -100,24 +100,26 @@ Edit the constants at the top of `daemon.py`, then restart the daemon.
 
 | Constant | Default | Meaning |
 | - | - | - |
-| `HOTKEY` | `ctrl+alt+space` | Starts and stops recording. Uses the [`keyboard`](https://github.com/boppreh/keyboard) hotkey format. |
-| `TTS_VOICE` | `mary` | Pocket TTS voice. See below. |
+| `HOTKEY` | `ctrl+f12` | Starts and stops recording. Uses the [`keyboard`](https://github.com/boppreh/keyboard) hotkey format. |
+| `TTS_VOICE` | `af_heart` | Kokoro voice. See below. |
 | `SPEECH_RMS` | `0.01` | Loudness level that counts as speech. Depends on your mic. |
 | `MIN_SPEECH_SECONDS` | `0.3` | Recordings with less speech than this are skipped. This stops the model from inventing words from silence. |
 
-### Voices
+### Vocabulary
 
-Built-in English voices: `alba`, `marius`, `javert`, `jean`, `cosette`, `anna`, `vera`, `fantine`, `charles`, `paul`, `eponine`, `azelma`, `george`, `mary`, `jane`, `michael`, `eve`, `bill_boerst`, `peter_yearsley`, `stuart_bell`, `caro_davy`.
+To help the model spell names it does not know, such as repo names, put one term on each line in `~/.cc-voice-channel/vocabulary.txt`:
 
-To hear a voice before you choose it:
-
-```powershell
-.venv\Scripts\python -X utf8 -m pocket_tts generate --voice marius --text "Hello, this is a test." --output-path marius.wav
+```text
+Claude Code
+StateQL
+segari-spring
 ```
 
-`-X utf8` is necessary on Windows. Without it, pocket-tts reads its config file with the wrong encoding and fails. `daemon.py` has its own workaround for this.
+The daemon reads the file at startup. Restart it after you change the file.
 
-To clone a voice from a WAV file, set `TTS_VOICE` to the file path. This needs the voice-cloning weights, which are gated. Accept the terms on the [`kyutai/pocket-tts`](https://huggingface.co/kyutai/pocket-tts) model page and run `hf auth login`.
+### Voices
+
+See the [Kokoro voice list](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md). Use an English voice: names that start with `a` are American English, and names that start with `b` are British English, for example `am_michael` or `bf_emma`. Kokoro selects the accent from the first letter.
 
 ## Tests
 
@@ -130,7 +132,7 @@ npm test
 
 - **Real speech is skipped with `No speech detected`:** lower `SPEECH_RMS`, for example to `0.005`.
 - **Silence still produces text:** raise `SPEECH_RMS`, for example to `0.02`.
-- **CUDA errors:** check that your GPU has about 6 GB of free VRAM, and that your NVIDIA driver supports CUDA 12.8.
+- **CUDA errors:** check that your GPU has about 5 GB of free VRAM, and that your NVIDIA driver supports CUDA 12.8.
 - **The channel does not register:** run `/mcp` in the session and check that `voice` is connected. If it is, restart Claude Code with the environment variable `MCP_PROTOCOL_NEGOTIATION=legacy`.
 - **The hotkey does nothing in some windows:** the `keyboard` package cannot see key presses while an elevated (administrator) window has focus. Run the daemon as administrator too.
 

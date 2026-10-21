@@ -1,7 +1,8 @@
 --extra-index-url https://download.pytorch.org/whl/cu128
 torch==2.9.1+cu128
-moshi
-pocket-tts
+transformers>=5.13.0
+accelerate
+kokoro
 sounddevice
 keyboard
 numpy

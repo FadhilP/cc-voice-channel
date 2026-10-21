@@ -1,5 +1,3 @@
-import functools
-import os
 import queue
 import secrets
 import threading
@@ -13,16 +11,19 @@ import numpy as np
 import sounddevice as sd
 import torch
 
-HOTKEY = "ctrl+alt+space"
-STT_REPO = "kyutai/stt-2.6b-en"
+HOTKEY = "f13"
+STT_REPO = "Qwen/Qwen3-ASR-1.7B-hf"
 STT_DEVICE = "cuda"
-TTS_VOICE = "mary"
+TTS_REPO = "hexgrad/Kokoro-82M"
+TTS_VOICE = "af_heart"
+TTS_SAMPLE_RATE = 24000
 CHANNEL_URL = "http://127.0.0.1:8788/"
 SPEAK_PORT = 8789
-SAMPLE_RATE = 24000  # Kyutai STT expects 24 kHz mono
+SAMPLE_RATE = 16000  # Qwen3-ASR expects 16 kHz mono
 SPEECH_RMS = 0.01  # Tune to your mic: 30 ms frames louder than this count as speech.
 MIN_SPEECH_SECONDS = 0.3
 TOKEN_PATH = Path.home() / ".cc-voice-channel" / "token"
+VOCABULARY_PATH = Path.home() / ".cc-voice-channel" / "vocabulary.txt"
 
 
 def load_token():
@@ -33,6 +34,16 @@ def load_token():
     except FileExistsError:
         pass
     return TOKEN_PATH.read_text().strip()
+
+
+def load_stt_prompt():
+    if not VOCABULARY_PATH.exists():
+        return None
+    lines = VOCABULARY_PATH.read_text(encoding="utf-8").splitlines()
+    terms = [line.strip() for line in lines if line.strip()]
+    if not terms:
+        return None
+    return "Vocabulary: " + ", ".join(terms)
 
 
 def is_authorized(headers):
@@ -76,23 +87,18 @@ class Recorder:
 
 @torch.no_grad()
 def transcribe(audio):
-    pcm = torch.from_numpy(audio).to(STT_DEVICE)[None, None]
-    # The model emits text with a delay, so trailing silence flushes the last words.
-    pad_left = int(stt_config.get("audio_silence_prefix_seconds", 0.0) * SAMPLE_RATE)
-    pad_right = int((stt_config.get("audio_delay_seconds", 0.0) + 1.0) * SAMPLE_RATE)
-    pcm = torch.nn.functional.pad(pcm, (pad_left, pad_right))
-    pieces = []
-    with stt_lock, mimi.streaming(1), lm_gen.streaming(1):
-        for chunk in pcm.split(frame_size, dim=2):
-            if chunk.shape[-1] < frame_size:
-                break
-            tokens = lm_gen.step(mimi.encode(chunk))
-            if tokens is None:
-                continue
-            token = tokens[0, 0].item()
-            if token not in (0, 3):  # padding tokens
-                pieces.append(text_tokenizer.id_to_piece(token))
-    return "".join(pieces).replace("▁", " ").strip()
+    with stt_lock:
+        inputs = processor.apply_transcription_request(
+            audio=audio, prompt=stt_prompt, language="English"
+        )
+        inputs = inputs.to(stt_model.device, stt_model.dtype)
+        output = stt_model.generate(**inputs, max_new_tokens=1024)
+    new_tokens = output[:, inputs["input_ids"].shape[1] :]
+    text = processor.decode(new_tokens, return_format="transcription_only")[0].strip()
+    # On near-silence the model can repeat the vocabulary prompt back.
+    if text.startswith("Vocabulary:"):
+        return ""
+    return text
 
 
 def speech_seconds(audio):
@@ -126,8 +132,8 @@ def speak_worker():
     while True:
         text = speech_queue.get()
         try:
-            audio = tts.generate_audio(voice, text)
-            sd.play(audio.numpy(), tts.sample_rate)
+            chunks = [audio.numpy() for _, _, audio in tts(text, voice=TTS_VOICE)]
+            sd.play(np.concatenate(chunks), TTS_SAMPLE_RATE)
             sd.wait()
         except Exception as error:
             print(f"TTS failed: {error}")
@@ -149,28 +155,21 @@ class SpeakHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    # torch.compile needs Triton, which has no official Windows build.
-    os.environ["NO_TORCH_COMPILE"] = "1"
-    import pocket_tts.utils.config
-    from moshi.models import LMGen, loaders
-    from pocket_tts import TTSModel
-
-    # pocket-tts reads its YAML config without encoding=, which breaks on Windows code pages.
-    pocket_tts.utils.config.open = functools.partial(open, encoding="utf-8")
+    from kokoro import KPipeline
+    from transformers import AutoModelForMultimodalLM, AutoProcessor
 
     token = load_token()
     print("Loading models...")
-    checkpoint = loaders.CheckpointInfo.from_hf_repo(STT_REPO)
-    mimi = checkpoint.get_mimi(device=STT_DEVICE)
-    text_tokenizer = checkpoint.get_text_tokenizer()
-    lm_gen = LMGen(checkpoint.get_moshi(device=STT_DEVICE), **checkpoint.lm_gen_config)
-    stt_config = checkpoint.stt_config
-    frame_size = int(mimi.sample_rate / mimi.frame_rate)
+    processor = AutoProcessor.from_pretrained(STT_REPO)
+    stt_model = AutoModelForMultimodalLM.from_pretrained(
+        STT_REPO, device_map=STT_DEVICE, dtype=torch.bfloat16
+    )
+    stt_prompt = load_stt_prompt()
     stt_lock = threading.Lock()
     # The first pass on CUDA is slow, so do it now instead of on the first dictation.
     transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))
-    tts =TTSModel.load_model()
-    voice = tts.get_state_for_audio_prompt(TTS_VOICE)
+    # Kokoro picks the language from the first letter of the voice name.
+    tts = KPipeline(lang_code=TTS_VOICE[0], repo_id=TTS_REPO)
     speech_queue = queue.Queue()
     threading.Thread(target=speak_worker, daemon=True).start()
 

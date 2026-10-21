@@ -1,6 +1,10 @@
+import tempfile
+from pathlib import Path
+
 import numpy as np
 
-from daemon import MIN_SPEECH_SECONDS, SAMPLE_RATE, speech_seconds
+import daemon
+from daemon import MIN_SPEECH_SECONDS, SAMPLE_RATE, load_stt_prompt, speech_seconds
 
 rng = np.random.default_rng(0)
 second = np.arange(SAMPLE_RATE) / SAMPLE_RATE
@@ -16,4 +20,12 @@ assert speech_seconds(room_noise) < MIN_SPEECH_SECONDS
 assert speech_seconds(key_click) < MIN_SPEECH_SECONDS
 assert speech_seconds(voice) > 0.9
 assert speech_seconds(silence[:10]) == 0
+
+with tempfile.TemporaryDirectory() as folder:
+    daemon.VOCABULARY_PATH = Path(folder) / "vocabulary.txt"
+    assert load_stt_prompt() is None
+    daemon.VOCABULARY_PATH.write_text("\n  \n", encoding="utf-8")
+    assert load_stt_prompt() is None
+    daemon.VOCABULARY_PATH.write_text("Claude Code\n\n  StateQL \n", encoding="utf-8")
+    assert load_stt_prompt() == "Vocabulary: Claude Code, StateQL"
 print("ok")
